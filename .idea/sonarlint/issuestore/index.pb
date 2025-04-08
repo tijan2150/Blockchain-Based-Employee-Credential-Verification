@@ -7,3 +7,5 @@ U
 %contracts/education-verification.clar,a/a/aab1e9c2b21da83f596175b845a13c057904deac
 Q
 !contracts/employment-history.clar,c/1/c176a3297f14fb28101d69ef972160461c9a5f30
+T
+$contracts/identity-verification.clar,6/3/63627d2e05688d155fd361be7f5c89242e6c4fdd

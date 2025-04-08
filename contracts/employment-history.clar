@@ -1,22 +1,21 @@
-;; Employment History Contract
-;; This contract validates previous work experience
+;; Identity Verification Contract
+;; This contract validates personal information of employees
 
 ;; Define data variables
 (define-data-var contract-owner principal tx-sender)
-(define-map employers principal bool)
-(define-map employment-records
+(define-map identities
   { id: (string-ascii 36) }
   {
-    employee: principal,
-    employer: principal,
-    title: (string-ascii 100),
-    start-date: (string-ascii 10),
-    end-date: (string-ascii 10),
-    responsibilities: (string-ascii 500),
+    owner: principal,
+    name: (string-ascii 100),
+    date-of-birth: (string-ascii 10),
+    government-id: (buff 32),
     verified: bool,
     timestamp: uint
   }
 )
+
+(define-map verifiers principal bool)
 
 ;; Error codes
 (define-constant ERR_UNAUTHORIZED u1)
@@ -24,73 +23,38 @@
 (define-constant ERR_NOT_FOUND u3)
 (define-constant ERR_ALREADY_VERIFIED u4)
 
-;; Register as an employer
-(define-public (register-employer)
-  (begin
-    (asserts! (is-none (map-get? employers tx-sender)) (err ERR_ALREADY_REGISTERED))
-    (ok (map-set employers tx-sender true))
-  )
-)
-
-;; Approve an employer
-(define-public (approve-employer (employer principal))
+;; Add a verifier who can validate identities
+(define-public (add-verifier (verifier principal))
   (begin
     (asserts! (is-eq tx-sender (var-get contract-owner)) (err ERR_UNAUTHORIZED))
-    (ok (map-set employers employer true))
+    (ok (map-set verifiers verifier true))
   )
 )
 
-;; Add employment record
-(define-public (add-employment-record
-    (id (string-ascii 36))
-    (employee principal)
-    (title (string-ascii 100))
-    (start-date (string-ascii 10))
-    (end-date (string-ascii 10))
-    (responsibilities (string-ascii 500))
-  )
-  (let (
-    (record-exists (map-get? employment-records {id: id}))
-    (is-employer (default-to false (map-get? employers tx-sender)))
-  )
-    (asserts! (is-none record-exists) (err ERR_ALREADY_REGISTERED))
-    (asserts! is-employer (err ERR_UNAUTHORIZED))
-    (ok (map-set employment-records
-      {id: id}
-      {
-        employee: employee,
-        employer: tx-sender,
-        title: title,
-        start-date: start-date,
-        end-date: end-date,
-        responsibilities: responsibilities,
-        verified: true,
-        timestamp: block-height
-      }
-    ))
+;; Remove a verifier
+(define-public (remove-verifier (verifier principal))
+  (begin
+    (asserts! (is-eq tx-sender (var-get contract-owner)) (err ERR_UNAUTHORIZED))
+    (ok (map-delete verifiers verifier))
   )
 )
 
-;; Employee can claim employment (to be verified by employer)
-(define-public (claim-employment
+;; Register a new identity
+(define-public (register-identity
     (id (string-ascii 36))
-    (employer principal)
-    (title (string-ascii 100))
-    (start-date (string-ascii 10))
-    (end-date (string-ascii 10))
-    (responsibilities (string-ascii 500))
+    (name (string-ascii 100))
+    (date-of-birth (string-ascii 10))
+    (government-id (buff 32))
   )
-  (let ((record-exists (map-get? employment-records {id: id})))
-    (asserts! (is-none record-exists) (err ERR_ALREADY_REGISTERED))
-    (ok (map-set employment-records
+  (let ((identity-data (map-get? identities {id: id})))
+    (asserts! (is-none identity-data) (err ERR_ALREADY_REGISTERED))
+    (ok (map-set identities
       {id: id}
       {
-        employee: tx-sender,
-        employer: employer,
-        title: title,
-        start-date: start-date,
-        end-date: end-date,
-        responsibilities: responsibilities,
+        owner: tx-sender,
+        name: name,
+        date-of-birth: date-of-birth,
+        government-id: government-id,
         verified: false,
         timestamp: block-height
       }
@@ -98,36 +62,39 @@
   )
 )
 
-;; Employer verifies a claimed employment record
-(define-public (verify-employment (id (string-ascii 36)))
+;; Verify an identity
+(define-public (verify-identity (id (string-ascii 36)))
   (let (
-    (record (unwrap! (map-get? employment-records {id: id}) (err ERR_NOT_FOUND)))
-    (is-employer (is-eq tx-sender (get employer record)))
+    (identity-data (unwrap! (map-get? identities {id: id}) (err ERR_NOT_FOUND)))
+    (is-verifier (default-to false (map-get? verifiers tx-sender)))
   )
-    (asserts! is-employer (err ERR_UNAUTHORIZED))
-    (asserts! (not (get verified record)) (err ERR_ALREADY_VERIFIED))
-    (ok (map-set employment-records
+    (asserts! is-verifier (err ERR_UNAUTHORIZED))
+    (asserts! (not (get verified identity-data)) (err ERR_ALREADY_VERIFIED))
+    (ok (map-set identities
       {id: id}
-      (merge record {verified: true})
+      (merge identity-data {verified: true})
     ))
   )
 )
 
-;; Get employment record
-(define-read-only (get-employment-record (id (string-ascii 36)))
-  (let ((record (map-get? employment-records {id: id})))
-    (if (is-some record)
-      (ok (unwrap! record (err ERR_NOT_FOUND)))
-      (err ERR_NOT_FOUND)
-    )
+;; Get identity information (only owner or verifier can access)
+(define-read-only (get-identity (id (string-ascii 36)))
+  (let (
+    (identity-data (unwrap! (map-get? identities {id: id}) (err ERR_NOT_FOUND)))
+    (is-verifier (default-to false (map-get? verifiers tx-sender)))
+    (is-owner (is-eq tx-sender (get owner identity-data)))
+  )
+    (asserts! (or is-owner is-verifier) (err ERR_UNAUTHORIZED))
+    (ok identity-data)
   )
 )
 
-;; Get all employment records for an employee
-;; Note: In a real implementation, this would require pagination or other mechanisms
-;; Simplified for this example
-(define-read-only (get-employee-history (employee principal))
-  (ok true)
-  ;; In a real implementation, this would search through records to find all matches
-  ;; Simplified for this example
+;; Check if an identity is verified (public function)
+(define-read-only (is-identity-verified (id (string-ascii 36)))
+  (let ((identity-data (map-get? identities {id: id})))
+    (if (is-some identity-data)
+      (ok (get verified (unwrap! identity-data (err ERR_NOT_FOUND))))
+      (err ERR_NOT_FOUND)
+    )
+  )
 )
