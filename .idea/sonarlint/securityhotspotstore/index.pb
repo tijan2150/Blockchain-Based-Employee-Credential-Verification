@@ -5,3 +5,5 @@ U
 %contracts/certification-tracking.clar,6/1/6151c0851189bb500896b2153432be4778377972
 U
 %contracts/education-verification.clar,a/a/aab1e9c2b21da83f596175b845a13c057904deac
+Q
+!contracts/employment-history.clar,c/1/c176a3297f14fb28101d69ef972160461c9a5f30
